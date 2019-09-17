@@ -1069,6 +1069,22 @@ void t_cpp_generator::generate_struct_declaration(ostream& out,
       }
     }
 
+    // Method `bool all()` returns true if all non required fields are set
+    indent(out) << endl << "bool all() {" << endl;
+    
+    indent_up();
+    indent(out) << "return";
+    for (m_iter = members.begin(); m_iter != members.end(); ++m_iter) {
+      if ((*m_iter)->get_req() != t_field::T_REQUIRED) {
+        out << " " << (*m_iter)->get_name() << " &";
+      }
+    }
+
+    out.seekp(-2, std::ios::cur) << ";" << endl;
+
+    indent_down();
+    indent(out) << "}" << endl;
+
     indent_down();
     indent(out) << "} _" << tstruct->get_name() << "__isset;" << endl;
   }
