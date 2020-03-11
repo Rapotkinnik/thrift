@@ -21,7 +21,13 @@
  * details.
  */
 
+#include <fstream>
+#include <filesystem>
+
 #include <sys/stat.h>
+
+#include <fmt/format.h>
+#include <fmt/ostream.h>
 
 #include "thrift/platform.h"
 #include "thrift/generate/t_oop_generator.h"
@@ -33,19 +39,19 @@
 
 class t_hana_generator : public t_oop_generator {
 public:
-  using t_options
-      = std::map<std::string, std::string>;
+  using t_options = std::map<std::string, std::string>;
 
   t_hana_generator(t_program* program,
                    const t_options& parsed_options,
                    const std::string& /*option_string*/)
-    : t_oop_generator(program) {
-  }
+    : t_oop_generator(program) {}
 
-  void init_generator() override {}
-  void close_generator() override {}
+  void init_generator() override;
+  void close_generator() override;
 
-  void generate_enum(t_enum* tenum) override {}
+  std::string get_out_dir() const override;
+
+  void generate_enum(t_enum* tenum) override;
   void generate_const(t_const* tconst) override {}
   void generate_struct(t_struct* tstruct) override {}
   void generate_typedef(t_typedef* ttypedef) override {}
@@ -55,6 +61,142 @@ public:
     generate_struct(txception);
   }
   void generate_forward_declaration(t_struct* tstruct) override {}
+
+private:
+  std::string s_namespace_;
+  std::ofstream f_types_;
+  std::ofstream f_types_impl_;
+  ofstream_with_content_based_conditional_update f_header_;
+  ofstream_with_content_based_conditional_update f_service_;
 };
+
+static constexpr auto k_header = R"*(
+{autogen_comment}
+#pragma once
+
+#include <memory>
+#include <ostream>
+#include <algorithm>
+#include <functional>
+
+#include <boost/hana.hpp>
+
+#include <thrift/TToString.h>
+
+{dependencies_includes}
+
+namespace hana = boost::hana;
+)*";
+
+static constexpr auto k_ns_header = R"*(
+namespace {namespace} {{
+)*";
+
+static constexpr auto k_ns_footer = R"*(
+}}  // {namespace}
+)*";
+
+auto make_prefix(const t_program* program) {
+  auto ns = program->get_namespace("cpp");
+  return std::replace(ns.begin(), ns.end(), '.', '/'), ns;
+};
+
+auto make_namespace(const t_program* program) {
+  auto ns = program->get_namespace("cpp");
+
+  std::string result{};
+  std::string::size_type loc;
+  while ((loc = ns.find(".")) != std::string::npos) {
+    result += ns.substr(0, loc);
+    result += "::";
+    ns = ns.substr(loc + 1);
+  }
+
+  return result += ns.substr(0, loc);
+};
+
+std::string t_hana_generator::get_out_dir() const {
+  auto prefix = make_prefix(program_);
+  auto out_path = program_->get_out_path();
+
+  if (!prefix.empty())
+    out_path += prefix + '/';
+
+  return out_path;
+}
+
+void t_hana_generator::init_generator() {
+  using std::filesystem::create_directories;
+
+  create_directories(get_out_dir());
+  f_types_.open(get_out_dir() + "types.h");
+  f_types_impl_.open(get_out_dir() + "types.cpp");
+
+  std::vector<std::string> includes {};
+  for (const auto program : program_->get_includes()) {
+    includes.emplace_back();
+    fmt::format_to(std::back_inserter(includes.back()),
+      R"*(#include "{}/types.h")*", make_prefix(program));
+  }
+
+  fmt::print(f_types_, k_header,
+    fmt::arg("autogen_comment", autogen_comment()),
+    fmt::arg("dependencies_includes", fmt::join(includes, "\n")));
+
+  if (auto ns = make_namespace(program_); !ns.empty())
+    fmt::print(f_types_, k_ns_header, fmt::arg("namespace", ns));
+}
+
+void t_hana_generator::close_generator() {
+  if (auto ns = make_namespace(program_); !ns.empty())
+    fmt::print(f_types_, k_ns_footer, fmt::arg("namespace", ns));
+
+  f_types_.close();
+}
+
+static constexpr auto k_enum = R"*(
+enum class {name} {{
+  {values}
+}};
+)*";
+
+// TODO: Move definition to the impl file
+static constexpr auto k_enum_to_string = R"*(
+namespace std {{
+inline constexpr auto to_string({type} {name}) {{
+  static constexpr char * {name}2string[] = {{
+    {values}
+  }};
+
+  return {name}2string[{name}];
+}};
+}}  // namespace std
+
+inline std::ostream& operator<<(std::ostream& out, {type} {name}) {{
+  return out << std::to_string({name});
+}};
+)*";
+
+void t_hana_generator::generate_enum(t_enum* tenum) {
+  constexpr auto kvp_pattern = "{0} = {1}";
+  constexpr auto index_pattern = R"*([{1}::{0}] = "{0}")*";
+
+  std::vector<std::string> indexes {};
+  std::vector<std::string> key_values {};
+  for (const auto key_value : tenum->get_constants()) {
+    indexes.push_back(fmt::format(index_pattern, key_value->get_name(), tenum->get_name()));
+    key_values.push_back(fmt::format(kvp_pattern, key_value->get_name(), key_value->get_value()));
+  }
+
+  fmt::print(f_types_, k_enum,
+    fmt::arg("name", tenum->get_name()),
+    fmt::arg("values", fmt::join(key_values, ",\n  ")));
+
+
+  fmt::print(f_types_, k_enum_to_string,
+    fmt::arg("type", tenum->get_name()),
+    fmt::arg("name", lowercase(tenum->get_name())),
+    fmt::arg("values", fmt::join(indexes, ",\n    ")));
+}
 
 THRIFT_REGISTER_GENERATOR(hana, "C++", "    C++ powered by boost::hana\n")
