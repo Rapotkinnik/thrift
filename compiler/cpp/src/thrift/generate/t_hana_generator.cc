@@ -154,18 +154,16 @@ void t_hana_generator::close_generator() {
   f_types_.close();
 }
 
+// TODO: Move definition to the impl file
 static constexpr auto k_enum = R"*(
-enum class {name} {{
+enum class {type} {{
   {values}
 }};
-)*";
 
-// TODO: Move definition to the impl file
-static constexpr auto k_enum_to_string = R"*(
 namespace std {{
 inline constexpr auto to_string({type} {name}) {{
   static constexpr char * {name}2string[] = {{
-    {values}
+    {indexes}
   }};
 
   return {name}2string[{name}];
@@ -181,22 +179,20 @@ void t_hana_generator::generate_enum(t_enum* tenum) {
   constexpr auto kvp_pattern = "{0} = {1}";
   constexpr auto index_pattern = R"*([{1}::{0}] = "{0}")*";
 
+  std::vector<std::string> values {};
   std::vector<std::string> indexes {};
-  std::vector<std::string> key_values {};
-  for (const auto key_value : tenum->get_constants()) {
-    indexes.push_back(fmt::format(index_pattern, key_value->get_name(), tenum->get_name()));
-    key_values.push_back(fmt::format(kvp_pattern, key_value->get_name(), key_value->get_value()));
+  auto name = lowercase(tenum->get_name());
+
+  for (const auto kvp : tenum->get_constants()) {
+    values.push_back(fmt::format(kvp_pattern, kvp->get_name(), kvp->get_value()));
+    indexes.push_back(fmt::format(index_pattern, kvp->get_name(), tenum->get_name()));
   }
 
   fmt::print(f_types_, k_enum,
-    fmt::arg("name", tenum->get_name()),
-    fmt::arg("values", fmt::join(key_values, ",\n  ")));
-
-
-  fmt::print(f_types_, k_enum_to_string,
+    fmt::arg("name", name),
     fmt::arg("type", tenum->get_name()),
-    fmt::arg("name", lowercase(tenum->get_name())),
-    fmt::arg("values", fmt::join(indexes, ",\n    ")));
+    fmt::arg("values", fmt::join(values, ",\n  ")),
+    fmt::arg("indexes", fmt::join(indexes, ",\n    ")));
 }
 
 THRIFT_REGISTER_GENERATOR(hana, "C++", "    C++ powered by boost::hana\n")
