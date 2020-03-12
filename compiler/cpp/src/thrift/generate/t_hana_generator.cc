@@ -316,9 +316,7 @@ static constexpr auto k_struct_field_setter_template = R"*(
   }};)*";
 
 static constexpr auto k_struct_field_accessor_template = R"*(
-        make_pair(make_tuple("{name}", {type}, {id}), [](auto&& o) {{
-          return o.{name}();
-        }}))*";
+        make_pair(make_pair("{name}", {id}), [](auto&& o) {{ return o.{name}(); }}))*";
 
 void t_hana_generator::generate_struct(t_struct* tstruct) {
   std::vector<std::string> members{};
@@ -349,7 +347,6 @@ void t_hana_generator::generate_struct(t_struct* tstruct) {
 
     accessors.emplace_back();
     fmt::format_to(std::back_inserter(accessors.back()), k_struct_field_accessor_template + 1,
-      fmt::arg("type", type_name(member->get_type())),
       fmt::arg("name", member->get_name()),
       fmt::arg("id", member->get_key()));
   }
