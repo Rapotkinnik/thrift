@@ -83,9 +83,6 @@ static constexpr auto k_header = R"*(
 
 #include <boost/hana.hpp>
 
-#include <thrift/TBase.h>
-#include <thrift/Thrift.h>
-
 {dependencies_includes}
 )*";
 
@@ -260,15 +257,10 @@ void t_hana_generator::generate_const(t_const* tconst) {
 
 
 static constexpr auto k_struct_template = R"*(
-
-class {type} : public ::apache::thrift::TBase {{
-public:
-  // TODO: hide it if class
-  //       has required fields
-  {type}();
-  // TODO: add costructor
-  //       with required fields
-  ~{type}() override nothrow = default;
+struct {type} {{
+  // All fields are optional because of that
+  // they may be skipped during deserialization
+{members}
 
   bool operator < (const {type} &rhs) const;
   bool operator == (const {type} &rhs) const;
@@ -276,67 +268,60 @@ public:
     return !(*this == rhs);
   }}
 
-{getters}
-
-{setters}
-
-  // TODO: Use template reader/writer outside
-  uint32_t read(protocol::TProtocol* iprot) override;
-  uint32_t write(protocol::TProtocol* oprot) const override;
-
-private:
-  // All fields are optional because of that
-  // they may be skipped during deserialization
-{members}
-}};  // class {type}
-
-namespace boost::hana {{
-  template <>
-  struct accessors_impl<{type}> {{
+  struct hana_accessors_impl {{
     static BOOST_HANA_CONSTEXPR_LAMBDA auto apply() {{
       return make_tuple(
 {accessors}
       );
     }}
   }};
-}}  // namespace boost::hana
+}}  // struct {type};
+
+class {type}Builder {{
+public:
+  {type}Builder({params});
+
+{setters}
+
+  operator const {type} &() const {{
+    return m_inner;
+  }}
+  auto make() const {{
+    return m_inner;
+  }}
+
+private:
+  {type} m_inner {{}};
+}};  // struct {type}Builder
 )*";
 
 static constexpr auto k_struct_field_template = R"*(
   std::optional<{type}> m_{name};)*";
 
-static constexpr auto k_struct_field_getter_template = R"*(
-  auto get_{name}() const {{
-    return m_{name};
-  }};)*";
-
 static constexpr auto k_struct_field_setter_template = R"*(
   auto set_{name}({type} {name}) {{
-    return m_{name} = std::move({name}), *this;
+    return m_inner.{name} = std::move({name}), *this;
   }};)*";
 
 static constexpr auto k_struct_field_accessor_template = R"*(
-        make_pair(make_pair("{name}", {id}), [](auto&& o) {{ return o.{name}(); }}))*";
+        make_pair(make_pair("{name}", {id}), [](auto&& o) {{ return o.{name}; }}))*";
 
 void t_hana_generator::generate_struct(t_struct* tstruct) {
+  std::vector<std::string> params{};
   std::vector<std::string> members{};
-  std::vector<std::string> getters{};
   std::vector<std::string> setters{};
   std::vector<std::string> accessors{};
-  std::vector<std::string> required_members{};
 
   for (const auto member : tstruct->get_members()) {
     if (member->get_req() == t_field::T_REQUIRED) {
-      required_members.push_back(member->get_name());
+      params.emplace_back();
+      fmt::format_to(std::back_inserter(params.back()), "{type} {name}",
+        fmt::arg("type", type_name(member->get_type())),
+        fmt::arg("name", member->get_name()));
     }
 
     members.emplace_back();
     fmt::format_to(std::back_inserter(members.back()), k_struct_field_template + 1,
-      fmt::arg("type", type_name(member->get_type())),
-      fmt::arg("name", member->get_name()));
-
-    getters.emplace_back();
-    fmt::format_to(std::back_inserter(getters.back()), k_struct_field_getter_template + 1,
       fmt::arg("type", type_name(member->get_type())),
       fmt::arg("name", member->get_name()));
 
@@ -353,8 +338,8 @@ void t_hana_generator::generate_struct(t_struct* tstruct) {
 
   fmt::print(f_types_, k_struct_template,
     fmt::arg("type", tstruct->get_name()),
+    fmt::arg("params", fmt::join(params, ", ")),
     fmt::arg("members", fmt::join(members, "\n")),
-    fmt::arg("getters", fmt::join(getters, "\n")),
     fmt::arg("setters", fmt::join(setters, "\n")),
     fmt::arg("accessors", fmt::join(accessors, ",\n")));
 }
