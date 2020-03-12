@@ -50,10 +50,11 @@ public:
   void close_generator() override;
 
   std::string get_out_dir() const override;
+  std::string type_name(const t_type* ttype);
 
   void generate_enum(t_enum* tenum) override;
-  void generate_const(t_const* tconst) override {}
-  void generate_struct(t_struct* tstruct) override {}
+  void generate_const(t_const* tconst) override;
+  void generate_struct(t_struct* tstruct) override;
   void generate_typedef(t_typedef* ttypedef) override {}
   void generate_service(t_service* tservice) override {}
   void generate_xception(t_struct* txception) override {
@@ -76,16 +77,16 @@ static constexpr auto k_header = R"*(
 
 #include <memory>
 #include <ostream>
+#include <optional>
 #include <algorithm>
 #include <functional>
 
 #include <boost/hana.hpp>
 
-#include <thrift/TToString.h>
+#include <thrift/TBase.h>
+#include <thrift/Thrift.h>
 
 {dependencies_includes}
-
-namespace hana = boost::hana;
 )*";
 
 static constexpr auto k_ns_header = R"*(
@@ -125,6 +126,55 @@ std::string t_hana_generator::get_out_dir() const {
   return out_path;
 }
 
+/**
+ * Returns the C++ type that corresponds to the thrift type.
+ *
+ * @param tbase The base type
+ * @return Explicit C++ type, i.e. "int32_t"
+ */
+std::string t_hana_generator::type_name(const t_type* ttype) {
+  if (auto tbase = dynamic_cast<const t_base_type*>(ttype)) {
+    switch (tbase->get_base()) {
+    case t_base_type::TYPE_VOID:
+      return "void";
+    case t_base_type::TYPE_STRING:
+      return "std::string";
+    case t_base_type::TYPE_BOOL:
+      return "bool";
+    case t_base_type::TYPE_I8:
+      return "int8_t";
+    case t_base_type::TYPE_I16:
+      return "int16_t";
+    case t_base_type::TYPE_I32:
+      return "int32_t";
+    case t_base_type::TYPE_I64:
+      return "int64_t";
+    case t_base_type::TYPE_DOUBLE:
+      return "double";
+    default:
+      throw "compiler error: no C++ base type name for base type "
+          + t_base_type::t_base_name(tbase->get_base());
+    }
+  }
+
+  if (auto tmap = dynamic_cast<const t_map*>(ttype))
+    return fmt::format("std::map<{key}, {value}>",
+      fmt::arg("key", type_name(tmap->get_key_type())),
+      fmt::arg("value", type_name(tmap->get_val_type())));
+
+  if (auto tset = dynamic_cast<const t_set*>(ttype))
+    return fmt::format("std::set<{}>", type_name(tset->get_elem_type()));
+
+  if (auto tlist = dynamic_cast<const t_list*>(ttype))
+    return fmt::format("std::vector<{}>", type_name(tlist->get_elem_type()));
+
+  auto program = ttype->get_program();
+  if (program && program != get_program())
+    return make_namespace(program) + "::" + ttype->get_name();
+
+  return ttype->get_name();
+}
+
 void t_hana_generator::init_generator() {
   using std::filesystem::create_directories;
 
@@ -139,7 +189,7 @@ void t_hana_generator::init_generator() {
       R"*(#include "{}/types.h")*", make_prefix(program));
   }
 
-  fmt::print(f_types_, k_header,
+  fmt::print(f_types_, k_header + 1,
     fmt::arg("autogen_comment", autogen_comment()),
     fmt::arg("dependencies_includes", fmt::join(includes, "\n")));
 
@@ -149,7 +199,7 @@ void t_hana_generator::init_generator() {
 
 void t_hana_generator::close_generator() {
   if (auto ns = make_namespace(program_); !ns.empty())
-    fmt::print(f_types_, k_ns_footer, fmt::arg("namespace", ns));
+    fmt::print(f_types_, k_ns_footer + 1, fmt::arg("namespace", ns));
 
   f_types_.close();
 }
@@ -193,6 +243,123 @@ void t_hana_generator::generate_enum(t_enum* tenum) {
     fmt::arg("type", tenum->get_name()),
     fmt::arg("values", fmt::join(values, ",\n  ")),
     fmt::arg("indexes", fmt::join(indexes, ",\n    ")));
+}
+
+void t_hana_generator::generate_const(t_const* tconst) {
+  constexpr auto const_pattern = "extern const {type} g_{name} = {value};\n";
+  constexpr auto constexpr_pattern = "extern consexpr {type} g_{name} = {value};\n";
+
+  //const auto type = tconst->get_type();
+  //if (type->is_base_type() && !type->is_string()) {
+  //  fmt::print(f_types_, constexpr_pattern,
+  //    fmt::arg("type", type_name(type)),
+  //    fmt::arg("name", tconst->get_name()),
+  //    fmt::arg("value", tconst->get_value()));
+  //}
+}
+
+
+static constexpr auto k_struct_template = R"*(
+
+class {type} : public ::apache::thrift::TBase {{
+public:
+  // TODO: hide it if class
+  //       has required fields
+  {type}();
+  // TODO: add costructor
+  //       with required fields
+  ~{type}() override nothrow = default;
+
+  bool operator < (const {type} &rhs) const;
+  bool operator == (const {type} &rhs) const;
+  bool operator != (const {type} &rhs) const {{
+    return !(*this == rhs);
+  }}
+
+{getters}
+
+{setters}
+
+  // TODO: Use template reader/writer outside
+  uint32_t read(protocol::TProtocol* iprot) override;
+  uint32_t write(protocol::TProtocol* oprot) const override;
+
+private:
+  // All fields are optional because of that
+  // they may be skipped during deserialization
+{members}
+}};  // class {type}
+
+namespace boost::hana {{
+  template <>
+  struct accessors_impl<{type}> {{
+    static BOOST_HANA_CONSTEXPR_LAMBDA auto apply() {{
+      return make_tuple(
+{accessors}
+      );
+    }}
+  }};
+}}  // namespace boost::hana
+)*";
+
+static constexpr auto k_struct_field_template = R"*(
+  std::optional<{type}> m_{name};)*";
+
+static constexpr auto k_struct_field_getter_template = R"*(
+  auto get_{name}() const {{
+    return m_{name};
+  }};)*";
+
+static constexpr auto k_struct_field_setter_template = R"*(
+  auto set_{name}({type} {name}) {{
+    return m_{name} = std::move({name}), *this;
+  }};)*";
+
+static constexpr auto k_struct_field_accessor_template = R"*(
+        make_pair(make_tuple("{name}", {type}, {id}), [](auto&& o) {{
+          return o.{name}();
+        }}))*";
+
+void t_hana_generator::generate_struct(t_struct* tstruct) {
+  std::vector<std::string> members{};
+  std::vector<std::string> getters{};
+  std::vector<std::string> setters{};
+  std::vector<std::string> accessors{};
+  std::vector<std::string> required_members{};
+
+  for (const auto member : tstruct->get_members()) {
+    if (member->get_req() == t_field::T_REQUIRED) {
+      required_members.push_back(member->get_name());
+    }
+
+    members.emplace_back();
+    fmt::format_to(std::back_inserter(members.back()), k_struct_field_template + 1,
+      fmt::arg("type", type_name(member->get_type())),
+      fmt::arg("name", member->get_name()));
+
+    getters.emplace_back();
+    fmt::format_to(std::back_inserter(getters.back()), k_struct_field_getter_template + 1,
+      fmt::arg("type", type_name(member->get_type())),
+      fmt::arg("name", member->get_name()));
+
+    setters.emplace_back();
+    fmt::format_to(std::back_inserter(setters.back()), k_struct_field_setter_template + 1,
+      fmt::arg("type", type_name(member->get_type())),
+      fmt::arg("name", member->get_name()));
+
+    accessors.emplace_back();
+    fmt::format_to(std::back_inserter(accessors.back()), k_struct_field_accessor_template + 1,
+      fmt::arg("type", type_name(member->get_type())),
+      fmt::arg("name", member->get_name()),
+      fmt::arg("id", member->get_key()));
+  }
+
+  fmt::print(f_types_, k_struct_template,
+    fmt::arg("type", tstruct->get_name()),
+    fmt::arg("members", fmt::join(members, "\n")),
+    fmt::arg("getters", fmt::join(getters, "\n")),
+    fmt::arg("setters", fmt::join(setters, "\n")),
+    fmt::arg("accessors", fmt::join(accessors, ",\n")));
 }
 
 THRIFT_REGISTER_GENERATOR(hana, "C++", "    C++ powered by boost::hana\n")
