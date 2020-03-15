@@ -55,7 +55,7 @@ public:
   void generate_enum(t_enum* tenum) override;
   void generate_const(t_const* tconst) override;
   void generate_struct(t_struct* tstruct) override;
-  void generate_typedef(t_typedef* ttypedef) override {}
+  void generate_typedef(t_typedef* ttypedef) override;
   void generate_service(t_service* tservice) override {}
   void generate_xception(t_struct* txception) override {
     // By default exceptions are the same as structs
@@ -299,7 +299,7 @@ static constexpr auto k_struct_field_template = R"*(
   std::optional<{type}> m_{name};)*";
 
 static constexpr auto k_struct_field_setter_template = R"*(
-  auto set_{name}({type} {name}) {{
+  auto & set_{name}({type} {name}) {{
     return m_inner.{name} = std::move({name}), *this;
   }};)*";
 
@@ -342,6 +342,18 @@ void t_hana_generator::generate_struct(t_struct* tstruct) {
     fmt::arg("members", fmt::join(members, "\n")),
     fmt::arg("setters", fmt::join(setters, "\n")),
     fmt::arg("accessors", fmt::join(accessors, ",\n")));
+}
+
+void t_hana_generator::generate_typedef(t_typedef* ttypedef) {
+  using namespace fmt::literals;
+  if (ttypedef->is_forward_typedef()) {
+    fmt::print(f_types_, "struct {type};",
+      "type"_a = ttypedef->get_symbolic());
+  } else {
+    fmt::print(f_types_, "using {name} = {type};",
+      "type"_a = type_name(ttypedef->get_type()),
+      "name"_a = ttypedef->get_symbolic());
+  }
 }
 
 THRIFT_REGISTER_GENERATOR(hana, "C++", "    C++ powered by boost::hana\n")
