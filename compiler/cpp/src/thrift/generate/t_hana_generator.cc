@@ -347,10 +347,10 @@ void t_hana_generator::generate_struct(t_struct* tstruct) {
 void t_hana_generator::generate_typedef(t_typedef* ttypedef) {
   using namespace fmt::literals;
   if (ttypedef->is_forward_typedef()) {
-    fmt::print(f_types_, "struct {type};",
+    fmt::print(f_types_, "struct {type};\n",
       "type"_a = ttypedef->get_symbolic());
   } else {
-    fmt::print(f_types_, "using {name} = {type};",
+    fmt::print(f_types_, "using {name} = {type};\n",
       "type"_a = type_name(ttypedef->get_type()),
       "name"_a = ttypedef->get_symbolic());
   }
@@ -365,35 +365,38 @@ class {type}If {{
 
 class {type}IfFactory {{
   public:
-    using Handler = {type}If;
-    using ConnectionInfo = ::apache::thrift::TConnectionInfo;
+   using Handler = {type}If;
+   using HandlerPtr = {type}If*;
+   using ConnectionInfo = ::apache::thrift::TConnectionInfo;
 
    virtual ~{type}IfFactory() = default;
-   virtual Handler* getHandler(const ConnectionInfo& /*connInfo*/) = 0;
-   virtual void releaseHandler(Handler* /*handler*/) = 0;
+   virtual HandlerPtr getHandler(const ConnectionInfo& /*connInfo*/) = 0;
+   virtual void releaseHandler(HandlerPtr /*handler*/) = 0;
 }}; // class {type}IfFactory
 
 class {type}IfSingletoneFactory : public {type}IfFactory {{
  public:
-  using HandlerPtr = std::shader_ptr<{type}If>;
+  using HandlerSharedPtr = std::shader_ptr<Handler>;
 
-  {type}IfSingletoneFactory(const HandlerPtr iface) : iface_(iface) {{}}
+  {type}IfSingletoneFactory(HandlerSharedPtr iface)
+    : iface_(std::move(iface))
+  {{}}
   virtual ~{type}IfSingletoneFactory() = default;
 
-  virtual Handler* getHandler(const ConnectionInfo& /*connInfo*/) {{
+  virtual HandlerPtr getHandler(const ConnectionInfo& /*connInfo*/) {{
     return iface_.get();
   }}
-  virtual void releaseHandler(Handler* /*handler*/) {{}}
+  virtual void releaseHandler(HandlerPtr /*handler*/) {{}}
 
  protected:
-   HandlerPtr iface_;
-};  // class {type}IfSingletoneFactory
+   HandlerSharedPtr iface_;
+}};  // class {type}IfSingletoneFactory
 
 class {type}Null : public {type}If {{
  public:
   virtual ~{type}Null() = default;
 
-{methods};
+{null_methods}
 }};  // class {type}Null
 )*";
 
@@ -406,7 +409,27 @@ static constexpr auto k_service_null_method_template = R"*(
 )*";
 
 void t_hana_generator::generate_service(t_service* tservice) {
+  using std::filesystem::create_directories;
 
+  create_directories(get_out_dir());
+  std::ofstream f_service {fmt::format("{}/{}.h", get_out_dir(), tservice->get_name())};
+  std::ofstream f_service_impl {fmt::format("{}/{}.cpp", get_out_dir(), tservice->get_name())};
+
+  fmt::print(f_service, k_header + 1,
+    fmt::arg("autogen_comment", autogen_comment()),
+    fmt::arg("dependencies_includes",
+      fmt::format(R"*(#include "{}/types.h")*", make_prefix(program_))));
+
+  if (auto ns = make_namespace(program_); !ns.empty())
+    fmt::print(f_service, k_ns_header, fmt::arg("namespace", ns));
+
+  fmt::print(f_service, k_service_template,
+    fmt::arg("type", tservice->get_name()),
+    fmt::arg("methods", ""),
+    fmt::arg("null_methods", ""));
+
+  if (auto ns = make_namespace(program_); !ns.empty())
+    fmt::print(f_service, k_ns_footer + 1, fmt::arg("namespace", ns));
 }
 
 THRIFT_REGISTER_GENERATOR(hana, "C++", "    C++ powered by boost::hana\n")
