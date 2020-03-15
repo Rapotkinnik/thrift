@@ -356,7 +356,7 @@ void t_hana_generator::generate_typedef(t_typedef* ttypedef) {
   }
 }
 
-static constexpr auto k_service_template = R"*(
+static constexpr auto k_service_iface_template = R"*(
 class {type}If {{
  public:
   virtual ~{type}If() = default;
@@ -381,7 +381,7 @@ class {type}IfSingletoneFactory : public {type}IfFactory {{
   {type}IfSingletoneFactory(HandlerSharedPtr iface)
     : iface_(std::move(iface))
   {{}}
-  virtual ~{type}IfSingletoneFactory() = default;
+  virtual ~{type}IfSingletoneFactory() override = default;
 
   virtual HandlerPtr getHandler(const ConnectionInfo& /*connInfo*/) {{
     return iface_.get();
@@ -394,10 +394,110 @@ class {type}IfSingletoneFactory : public {type}IfFactory {{
 
 class {type}Null : public {type}If {{
  public:
-  virtual ~{type}Null() = default;
+  virtual ~{type}Null() override = default;
 
 {null_methods}
 }};  // class {type}Null
+)*";
+
+static constexpr auto k_service_client_template = R"*(
+class {type}Client : public {type}if {{
+ public:
+  using ProtocolPtr = std::shared_ptr<::apache::thrift::protocol::TProtocol>;
+
+  {type}Client(ProtocolPtr prot)
+    : input_prot_(prot)
+    , output_prot_(prot)
+  {{}}
+  {type}Client(ProtocolPtr input_prot, ProtocolPtr output_prot)
+    : input_prot_(input_prot)
+    , output_prot_(output_prot)
+  {{}}
+  ~{type}Client() override = default;
+
+  // This methods are more dangerous than useful
+  //void setInputProtocol(ProtocolPtr prot) {{
+  //  input_prot_ = prot;
+  //}}
+  //void getOutputProtocol(ProtocolPtr prot) {{
+  //  output_prot_ = prot;
+  //}}
+
+  auto getInputProtocol() {{
+    return input_prot_;
+  }}
+  auto getOutputProtocol() {{
+    return output_prot_;
+  }}
+
+  // Client methods
+{methods}
+
+ private:
+  ProtocolPtr input_prot_;
+  ProtocolPtr output_prot_;
+}};  // class {type}Cleint
+
+// The 'concurrent' client is a thread safe client that correctly handles
+// out of order responses.  It is slower than the regular client, so should
+// only be used when you need to share a connection among multiple threads
+class {type}ConcurrentClient : public {type}If {
+ public:
+  using ProtocolPtr = std::shared_ptr<::apache::thrift::protocol::TProtocol>;
+
+  {type}ConcurrentClient(ProtocolPtr prot)
+    : input_prot_(prot)
+    , output_prot_(prot)
+  {{}}
+  {type}ConcurrentClient(ProtocolPtr input_prot, ProtocolPtr output_prot)
+    : input_prot_(input_prot)
+    , output_prot_(output_prot)
+  {{}}
+  ~{type}ConcurrentClient() override = default;
+}};  // class ConcurrentClient
+)*";
+
+static constexpr auto k_service_processor_template = R"*(
+class {type}Processor : public ::apache::thrift::TDispatchProcessor {
+ public:
+  using Handler = {type}If;
+  using HandlerPtr = std::shared_ptr<{type}If>;
+  using ProtocolPtr = ::apache::thrift::protocol::TProtocol*;
+
+  {type}Processor(HandlerPtr iface)
+    : iface_(std::move(iface))
+  {}
+  ~{type}Processor() override = defauld;
+  auto getHandler() {{
+    return iface_;
+  }}
+
+ protected:
+  bool dispatchCall(ProtocolPtr iprot, ProtocolPtr oprot, const std::string& fname, int32_t seqid, void* callContext) override;
+
+ private:
+  using ProcessFunction = std::function<void(int32_t, ProtocolPtr, ProtocolPtr, void*)>;
+  using ProcessMap = std::map<std::string, ProcessFunction>;
+
+  HandlerPtr iface_;
+  ProcessMap processMap_;
+}};  // class {type}Processor
+
+class {type}ProcessorFactory : public ::apache::thrift::TProcessorFactory {{
+ public:
+  using IfFactoryPtr = std::shared_ptr<{type}IfFactory>;
+  using ProcessorPtr = shared_ptr<::apache::thrift::TProcessor>;
+  using ConnectionInfo = ::apache::thrift::TConnectionInfo;
+
+  {type}ProcessorFactory(IfFactoryPtr handlerFactory)
+    : handlerFactory_(std::move(handlerFactory))
+  {}
+
+  ProcessorPtr getProcessor(const ConnectionInfo& connInfo);
+
+ protected:
+  IfFactoryPtr handlerFactory_;
+}};  // class {type}ProcessorFactory
 )*";
 
 static constexpr auto k_service_method_template = R"*(
@@ -423,10 +523,14 @@ void t_hana_generator::generate_service(t_service* tservice) {
   if (auto ns = make_namespace(program_); !ns.empty())
     fmt::print(f_service, k_ns_header, fmt::arg("namespace", ns));
 
-  fmt::print(f_service, k_service_template,
+  fmt::print(f_service, k_service_iface_template,
     fmt::arg("type", tservice->get_name()),
     fmt::arg("methods", ""),
     fmt::arg("null_methods", ""));
+
+  fmt::print(f_service, k_service_client_template,
+    fmt::arg("type", tservice->get_name()),
+    fmt::arg("methods", ""));
 
   if (auto ns = make_namespace(program_); !ns.empty())
     fmt::print(f_service, k_ns_footer + 1, fmt::arg("namespace", ns));
