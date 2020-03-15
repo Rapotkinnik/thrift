@@ -56,7 +56,7 @@ public:
   void generate_const(t_const* tconst) override;
   void generate_struct(t_struct* tstruct) override;
   void generate_typedef(t_typedef* ttypedef) override;
-  void generate_service(t_service* tservice) override {}
+  void generate_service(t_service* tservice) override;
   void generate_xception(t_struct* txception) override {
     // By default exceptions are the same as structs
     generate_struct(txception);
@@ -278,7 +278,7 @@ struct {type} {{
 }}  // struct {type};
 
 class {type}Builder {{
-public:
+ public:
   {type}Builder({params});
 
 {setters}
@@ -290,7 +290,7 @@ public:
     return m_inner;
   }}
 
-private:
+ private:
   {type} m_inner {{}};
 }};  // struct {type}Builder
 )*";
@@ -354,6 +354,59 @@ void t_hana_generator::generate_typedef(t_typedef* ttypedef) {
       "type"_a = type_name(ttypedef->get_type()),
       "name"_a = ttypedef->get_symbolic());
   }
+}
+
+static constexpr auto k_service_template = R"*(
+class {type}If {{
+ public:
+  virtual ~{type}If() = default;
+{methods}
+}};  // class {type}If
+
+class {type}IfFactory {{
+  public:
+    using Handler = {type}If;
+    using ConnectionInfo = ::apache::thrift::TConnectionInfo;
+
+   virtual ~{type}IfFactory() = default;
+   virtual Handler* getHandler(const ConnectionInfo& /*connInfo*/) = 0;
+   virtual void releaseHandler(Handler* /*handler*/) = 0;
+}}; // class {type}IfFactory
+
+class {type}IfSingletoneFactory : public {type}IfFactory {{
+ public:
+  using HandlerPtr = std::shader_ptr<{type}If>;
+
+  {type}IfSingletoneFactory(const HandlerPtr iface) : iface_(iface) {{}}
+  virtual ~{type}IfSingletoneFactory() = default;
+
+  virtual Handler* getHandler(const ConnectionInfo& /*connInfo*/) {{
+    return iface_.get();
+  }}
+  virtual void releaseHandler(Handler* /*handler*/) {{}}
+
+ protected:
+   HandlerPtr iface_;
+};  // class {type}IfSingletoneFactory
+
+class {type}Null : public {type}If {{
+ public:
+  virtual ~{type}Null() = default;
+
+{methods};
+}};  // class {type}Null
+)*";
+
+static constexpr auto k_service_method_template = R"*(
+  virtual {return} {name}({params}) = 0;
+)*";
+
+static constexpr auto k_service_null_method_template = R"*(
+  {return} {name}({params}) override {{}}
+)*";
+
+void t_hana_generator::generate_service(t_service* tservice) {
+
 }
 
 THRIFT_REGISTER_GENERATOR(hana, "C++", "    C++ powered by boost::hana\n")
