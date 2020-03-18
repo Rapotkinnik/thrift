@@ -379,8 +379,8 @@ class {type}IfSingletoneFactory : public {type}IfFactory {{
   using HandlerSharedPtr = std::shader_ptr<Handler>;
 
   {type}IfSingletoneFactory(HandlerSharedPtr iface)
-    : iface_(std::move(iface))
-  {{}}
+    : iface_(std::move(iface)) {{
+  }}
   virtual ~{type}IfSingletoneFactory() override = default;
 
   virtual HandlerPtr getHandler(const ConnectionInfo& /*connInfo*/) {{
@@ -407,12 +407,12 @@ class {type}Client : public {type}if {{
 
   {type}Client(ProtocolPtr prot)
     : input_prot_(prot)
-    , output_prot_(prot)
-  {{}}
+    , output_prot_(prot) {{
+  }}
   {type}Client(ProtocolPtr input_prot, ProtocolPtr output_prot)
     : input_prot_(input_prot)
-    , output_prot_(output_prot)
-  {{}}
+    , output_prot_(output_prot) {{
+  }}
   ~{type}Client() override = default;
 
   // This methods are more dangerous than useful
@@ -447,12 +447,12 @@ class {type}ConcurrentClient : public {type}If {
 
   {type}ConcurrentClient(ProtocolPtr prot)
     : input_prot_(prot)
-    , output_prot_(prot)
-  {{}}
+    , output_prot_(prot) {{
+  }}
   {type}ConcurrentClient(ProtocolPtr input_prot, ProtocolPtr output_prot)
     : input_prot_(input_prot)
-    , output_prot_(output_prot)
-  {{}}
+    , output_prot_(output_prot) {{
+  }}
   ~{type}ConcurrentClient() override = default;
 }};  // class ConcurrentClient
 )*";
@@ -465,8 +465,9 @@ class {type}Processor : public ::apache::thrift::TDispatchProcessor {
   using ProtocolPtr = ::apache::thrift::protocol::TProtocol*;
 
   {type}Processor(HandlerPtr iface)
-    : iface_(std::move(iface))
-  {}
+    : iface_(std::move(iface)) {{
+{process_map}
+  }}
   ~{type}Processor() override = defauld;
   auto getHandler() {{
     return iface_;
@@ -476,11 +477,13 @@ class {type}Processor : public ::apache::thrift::TDispatchProcessor {
   bool dispatchCall(ProtocolPtr iprot, ProtocolPtr oprot, const std::string& fname, int32_t seqid, void* callContext) override;
 
  private:
-  using ProcessFunction = std::function<void(int32_t, ProtocolPtr, ProtocolPtr, void*)>;
+  using ProcessFunction = void ({type}Processor::*)(int32_t, ProtocolPtr, ProtocolPtr, void*)>;
   using ProcessMap = std::map<std::string, ProcessFunction>;
 
   HandlerPtr iface_;
   ProcessMap processMap_;
+
+{process_methods}
 }};  // class {type}Processor
 
 class {type}ProcessorFactory : public ::apache::thrift::TProcessorFactory {{
@@ -490,14 +493,22 @@ class {type}ProcessorFactory : public ::apache::thrift::TProcessorFactory {{
   using ConnectionInfo = ::apache::thrift::TConnectionInfo;
 
   {type}ProcessorFactory(IfFactoryPtr handlerFactory)
-    : handlerFactory_(std::move(handlerFactory))
-  {}
+    : handlerFactory_(std::move(handlerFactory)) {{
+  }}
 
   ProcessorPtr getProcessor(const ConnectionInfo& connInfo);
 
  protected:
   IfFactoryPtr handlerFactory_;
 }};  // class {type}ProcessorFactory
+)*";
+
+static constexpr auto k_process_map_template = R"*(
+    processMap_["{func}"] = &{type}Processor::process_{func};
+)*";
+
+static constexpr auto k_process_method_template = R"*(
+    void process_{name}(int32_t seqid, ProtocolPtr iprot, ProtocolPtr oprot, void* connCtx);
 )*";
 
 static constexpr auto k_service_method_template = R"*(
