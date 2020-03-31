@@ -91,7 +91,7 @@ namespace {namespace} {{
 )*";
 
 static constexpr auto k_ns_footer = R"*(
-}}  // {namespace}
+}}  // namespace {namespace}
 )*";
 
 auto make_prefix(const t_program* program) {
@@ -262,6 +262,8 @@ struct {type} {{
   // they may be skipped during deserialization
 {members}
 
+  static constexpr auto __name__ = "{type}";
+
   bool operator < (const {type} &rhs) const;
   bool operator == (const {type} &rhs) const;
   bool operator != (const {type} &rhs) const {{
@@ -296,7 +298,7 @@ class {type}Builder {{
 )*";
 
 static constexpr auto k_struct_field_template = R"*(
-  std::optional<{type}> m_{name};)*";
+  std::optional<{type}> {name};)*";
 
 static constexpr auto k_struct_field_setter_template = R"*(
   auto & set_{name}({type} {name}) {{
@@ -304,7 +306,7 @@ static constexpr auto k_struct_field_setter_template = R"*(
   }};)*";
 
 static constexpr auto k_struct_field_accessor_template = R"*(
-        make_pair(make_pair("{name}", {id}), [](auto&& o) {{ return o.{name}; }}))*";
+        make_pair(make_pair("{name}", {id}), [](auto&& o) -> auto & {{ return o.{name}; }}))*";
 
 void t_hana_generator::generate_struct(t_struct* tstruct) {
   std::vector<std::string> params{};
