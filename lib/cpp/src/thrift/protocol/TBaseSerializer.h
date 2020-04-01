@@ -173,6 +173,16 @@ auto serialize(const std::string & value, TProtocol & protocol) {
   return protocol.writeString(value);
 };
 
+auto serialize_value = hana::overload_linearly(
+    [](bool value, TProtocol & protocol) { return protocol.writeBool(value); },
+    [](int8_t value, TProtocol & protocol) { return protocol.writeByte(value); },
+    [](int16_t value, TProtocol & protocol) { return protocol.writeI16(value); },
+	[](int32_t value, TProtocol & protocol) { return protocol.writeI32(value); },
+	[](int64_t value, TProtocol & protocol) { return protocol.writeI64(value); },
+	[](double value, TProtocol & protocol) { return protocol.writeDouble(value); },
+	[](const std::string & value, TProtocol & protocol) {return protocol.writeString(value); }
+);
+
 // I don't know what to do with it yet
 //auto serialize(const std::vector<int8_t> & value, TProtocol & protocol) {
 //  return protocol.writeBinary(value);

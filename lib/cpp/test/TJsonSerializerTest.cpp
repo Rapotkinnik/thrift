@@ -39,7 +39,7 @@ BOOST_AUTO_TEST_CASE(test_empty_struct_to_json_serialization) {
   constexpr auto expected = "{}";
   
   std::stringstream ss{};
-  TJsonSerializer{}.serialize(obj, ss);
+  ss << TJsonSerializer{obj}.pretty();
   
   BOOST_CHECK_MESSAGE(!ss.str().compare(expected),
     "Expected:\n" << expected << "\nGotten:\n" << ss.str());
@@ -50,7 +50,7 @@ BOOST_AUTO_TEST_CASE(test_nested_struct_to_json_serialization) {
   constexpr auto expected = "{}";
   
   std::stringstream ss{};
-  TJsonSerializer{}.serialize(obj, ss);
+  ss << TJsonSerializer{obj}.pretty();
   
   BOOST_CHECK_MESSAGE(!ss.str().compare(expected),
     "Expected:\n" << expected << "\nGotten:\n" << ss.str());
@@ -61,7 +61,7 @@ BOOST_AUTO_TEST_CASE(test_all_in_one_struct_to_json_serialization) {
   constexpr auto expected = "{}";
   
   std::stringstream ss{};
-  TJsonSerializer{}.serialize(obj, ss);
+  ss << TJsonSerializer{obj}.pretty();
   
   BOOST_CHECK_MESSAGE(!ss.str().compare(expected),
     "Expected:\n" << expected << "\nGotten:\n" << ss.str());
@@ -72,7 +72,7 @@ BOOST_AUTO_TEST_CASE(test_map_of_structs_to_json_serialization) {
   constexpr auto expected = "{}";
   
   std::stringstream ss{};
-  TJsonSerializer{}.serialize(obj, ss);
+  ss << TJsonSerializer{obj}.pretty();
   
   BOOST_CHECK_MESSAGE(!ss.str().compare(expected),
     "Expected:\n" << expected << "\nGotten:\n" << ss.str());
@@ -83,7 +83,7 @@ BOOST_AUTO_TEST_CASE(test_list_of_structs_to_json_serialization) {
   constexpr auto expected = "{}";
   
   std::stringstream ss{};
-  TJsonSerializer{}.serialize(obj, ss);
+  ss << TJsonSerializer{obj}.pretty();
   
   BOOST_CHECK_MESSAGE(!ss.str().compare(expected),
     "Expected:\n" << expected << "\nGotten:\n" << ss.str());
