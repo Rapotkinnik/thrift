@@ -17,8 +17,8 @@
  * under the License.
  */
 
-#ifndef _THRIFT_PROTOCOL_UTILS_H_
-#define _THRIFT_PROTOCOL_UTILS_H_ 1
+#ifndef _THRIFT_PROTOCOL_TBASESERIALIZER_H_
+#define _THRIFT_PROTOCOL_TBASESERIALIZER_H_ 1
 
 #include <boost/hana.hpp>
 
@@ -273,57 +273,6 @@ auto deserialize(T & object, TProtocol & protocol)
   size += iprot->readStructEnd();
   return size;
 }
-
-template <typename T>
-auto & to_json(const T &value, std::ostream &out) {
-  return out << value;
-}
-
-auto & to_json(const std::string &str, std::ostream &out) {
-  return out << '"' << str << '"';
-}
-
-template <typename T, typename U>
-auto & to_json(const std::pair<T, U> &pair, std::ostream &out) {
-  to_json(std::to_string(pair.first), out  << '{');
-  return to_json(pair.second, out << ':') << '}';
-}
-
-template <
-  typename T,
-  typename =
-    typename std::enable_if<
-	  is_iterable<T>::value>::type>
-auto & to_json(const T & iterable, std::ostream & out) {
-  out << '[';
-  for (const auto & elem : iterable)
-    to_json(elem, out << ',');
-
-  return (std::size(iterable) ? out.seekp(-1, std::io::end) : out) << ']';
-}
-
-template <
-  typename T,
-  typename =
-    typename std::enable_if<
-      is_hana_object<T>::value>::type>
-auto to_json(const T && object, std::ostream & out) 
-{
-  out << '{';
-  size_t count {};
-  hana::for_each(hana::accessors(object), [&](auto acessor) {
-    auto [meta, member] = acessor;
-    auto [name, id] = meta;
-
-	if (member(object)) {
-		++cout;
-		out << name << ':';
-		to_json(member(object).value(), out) << ',';
-	}
-  });
-	
-  return (count ? out.seekp(-1, std::io::end) : out) << '}';
-};
 }}} // apache::thrift::protocol
 
-#endif // #define _THRIFT_PROTOCOL_UTILS_H_ 1
+#endif // #define _THRIFT_PROTOCOL_TBASESERIALIZER_H_ 1
