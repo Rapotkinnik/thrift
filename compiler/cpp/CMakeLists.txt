@@ -82,6 +82,7 @@ THRIFT_ADD_COMPILER(delphi  "Enable compiler for Delphi" ON)
 THRIFT_ADD_COMPILER(erl     "Enable compiler for Erlang" ON)
 THRIFT_ADD_COMPILER(go      "Enable compiler for Go" ON)
 THRIFT_ADD_COMPILER(gv      "Enable compiler for GraphViz" ON)
+THRIFT_ADD_COMPILER(hana    "Enable compiler for Hana" OFF)
 THRIFT_ADD_COMPILER(haxe    "Enable compiler for Haxe" ON)
 THRIFT_ADD_COMPILER(hs      "Enable compiler for Haskell" ON)
 THRIFT_ADD_COMPILER(html    "Enable compiler for HTML Documentation" ON)
@@ -112,6 +113,11 @@ add_executable(thrift-compiler ${thrift-compiler_SOURCES})
 
 set_target_properties(thrift-compiler PROPERTIES RUNTIME_OUTPUT_DIRECTORY bin/)
 set_target_properties(thrift-compiler PROPERTIES OUTPUT_NAME thrift)
+
+if(THRIFT_COMPILER_HANA)
+  find_package(Fmt REQUIRED)
+  target_link_libraries(thrift-compiler fmt::fmt)
+endif()
 
 target_link_libraries(thrift-compiler parse)
 

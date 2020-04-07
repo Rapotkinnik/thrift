@@ -30,120 +30,8 @@ namespace thrift {
 namespace protocol {
 
 using namespace boost;
-using apache::protocol::TType;
-using apache::protocol::TProtocol;
-  T_STOP       = 0,
-  T_VOID       = 1,
-  T_BOOL       = 2,
-  T_BYTE       = 3,
-  T_I08        = 3,
-  T_I16        = 6,
-  T_I32        = 8,
-  T_U64        = 9,
-  T_I64        = 10,
-  T_DOUBLE     = 4,
-  T_STRING     = 11,
-  T_UTF7       = 11,
-  T_STRUCT     = 12,
-  T_MAP        = 13,
-  T_SET        = 14,
-  T_LIST       = 15,
-  T_UTF8       = 16,
-  T_UTF16      = 17
-
-hana::make_map(
-template <TType v>
-using type2enum = std::integral_constant<TType, v>;
-
-type2enum<TType::T_BOOL>
-template <typename T>
-struct type2type {};
-
-template <>
-struct type2type<bool> {
-  static constexpr value = TType::T_BOOL;
-}
-
-template <>
-struct type2type<int8_t> {
-  static constexpr value = TType::T_I08;
-}
-
-template <>
-struct type2type<int16_t> {
-  static constexpr value = TType::T_I16;
-}
-
-template <>
-struct type2type<int32_t> {
-  static constexpr value = TType::T_I32;
-}
-
-template <>
-struct type2type<int64_t> {
-  static constexpr value = TType::T_I64;
-}
-
-template <>
-struct type2type<uint64_t> {
-  static constexpr value = TType::T_U64;
-}
-
-template <>
-struct type2type<float> {
-  static constexpr value = TType::T_DOUBLE;
-}
-
-template <>
-struct type2type<double> {
-  static constexpr value = TType::T_DOUBLE;
-}
-
-template <>
-struct type2type<std::string> {
-  static constexpr value = TType::T_STRING;
-}
-
-template <typename T>
-struct type2type<std::set<T>> {
-  static constexpr value = TType::T_SET;
-}
-
-template <typename T>
-struct type2type<std::vector<T>> {
-  static constexpr value = TType::T_LIST;
-}
-
-template <typename K, typename V>
-struct type2type<std::map<K, V>> {
-  static constexpr value = TType::T_MAP;
-}
-
-template <typename T>
-auto type2type_v(const T &) {
-  return type2type<T>::value;
-};
-
-template <
-  typename T,
-  typename = std::void_t<>>
-struct is_iterable : std::false_type {};
-
-template <
-  typename T>
-struct is_iterable <
-    T, std::void_t <
-    decltype(declval<T>().end()),
-    decltype(declval<T>().being())>> : std::true_type {};
-
-template <
-  typename T,
-  typename = std::void_t<>>
-struct is_hana_object : std::false_type {};
-
-template <typename T>
-struct is_hana_object <T, std::void_t<decltype(T::hana_accessors_impl)>> : std::true_type {};
-	  
+using apache::thrift::protocol::TType;
+using apache::thrift::protocol::TProtocol;
 
 auto serialize(bool value, TProtocol & protocol) {
   return protocol.writeBool(value);
@@ -177,10 +65,10 @@ auto serialize_value = hana::overload_linearly(
     [](bool value, TProtocol & protocol) { return protocol.writeBool(value); },
     [](int8_t value, TProtocol & protocol) { return protocol.writeByte(value); },
     [](int16_t value, TProtocol & protocol) { return protocol.writeI16(value); },
-	[](int32_t value, TProtocol & protocol) { return protocol.writeI32(value); },
-	[](int64_t value, TProtocol & protocol) { return protocol.writeI64(value); },
-	[](double value, TProtocol & protocol) { return protocol.writeDouble(value); },
-	[](const std::string & value, TProtocol & protocol) {return protocol.writeString(value); }
+    [](int32_t value, TProtocol & protocol) { return protocol.writeI32(value); },
+    [](int64_t value, TProtocol & protocol) { return protocol.writeI64(value); },
+    [](double value, TProtocol & protocol) { return protocol.writeDouble(value); },
+    [](const std::string & value, TProtocol & protocol) {return protocol.writeString(value); }
 );
 
 // I don't know what to do with it yet
@@ -217,7 +105,7 @@ template <
   typename T,
   typename =
     typename std::enable_if<
-	  is_hana_object<T>::value>::type>
+      is_hana_object<T>::value>::type>
 auto serialize(const T && object, TProtocol & protocol)
 {
   uint32_t size {};
@@ -225,15 +113,15 @@ auto serialize(const T && object, TProtocol & protocol)
   hana::for_each(hana::accessors(object), [&](auto accessor) {
     auto [meta, member] = accessor;
     auto [name, id] = meta;
-	
+
     using op_type = typename std::result_of<member(object)>::type;
     using type = typename op_type::value_type;
-	
+
     if (member(object).has_value()) {
       size += protocol.writeFieldBegin(name, type2type<type>::value, id);
       size += serialize(member(object).value(), protocol);
       size += protocol.writeFieldEnd();
-	}
+    }
   });
 
   size += protocol.writeFieldStop();
@@ -246,37 +134,37 @@ template <
   typename T,
   typename =
     typename std::enable_if<
-	  is_hana_object<T>::value>::type>
+      is_hana_object<T>::value>::type>
 auto deserialize(T & object, TProtocol & protocol)
 {
   TType ftype;
   int16_t fid {};
   uint32_t size {};
   std::string name {};
-   
+
   size += protocol.readStructBegin(name);
   if (!name.empty() && name != object.__name__)
     throw std::runtime_error("wrong object name");
-	
+
   while (true) {
     size += protocol->readFieldBegin(name, ftype, fid);
-	if (ftype == TType::T_STOP) {
+    if (ftype == TType::T_STOP) {
       break;
     }
-	
+
     hana::for_each(hana::accessors(object), [&](auto accessor) {
       auto [meta, member] = accessor;
       auto [name, fid] = meta;
-	
+
       using op_type = typename std::result_of<member(object)>::type;
       using type = typename op_type::value_type;
-	  
-	  if (fid == id && ftype == type2type<type>::value)
-		size += deserialize(member(object).emplace(), protocol);
-	  else
-		size += protocol->skip(ftype);
+
+      if (fid == id && ftype == type2type<type>::value)
+        size += deserialize(member(object).emplace(), protocol);
+      else
+        size += protocol->skip(ftype);
     });
-  
+
     size += protocol->readFieldEnd();
   }
 

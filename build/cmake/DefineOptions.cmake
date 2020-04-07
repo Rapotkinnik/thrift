@@ -77,6 +77,29 @@ endif()
 CMAKE_DEPENDENT_OPTION(BUILD_CPP "Build C++ library" ON
                        "BUILD_LIBRARIES;WITH_CPP" OFF)
 
+# C++ powered by boost::hana
+option(WITH_HANA "Build C++ Thrift library powered by boost::hana" OFF)
+if(WITH_HANA)
+   set(CMAKE_CXX_STANDARD 17)
+   set(CMAKE_CXX_STANDARD_REQUIRED ON)
+   # NOTE: Currently the following options are C++ specific,
+   # but in future other libraries might reuse them.
+   # So they are not dependent on WITH_HANA but setting them without WITH_HANA currently
+   # has no effect.
+   if(ZLIB_LIBRARY)
+       # FindZLIB.cmake does not normalize path so we need to do it ourselves.
+       file(TO_CMAKE_PATH ${ZLIB_LIBRARY} ZLIB_LIBRARY)
+   endif()
+   find_package(ZLIB QUIET)
+   CMAKE_DEPENDENT_OPTION(WITH_ZLIB "Build with ZLIB support" ON
+                          "ZLIB_FOUND" OFF)
+   find_package(Libevent QUIET)
+   CMAKE_DEPENDENT_OPTION(WITH_LIBEVENT "Build with libevent support" ON
+                          "Libevent_FOUND" OFF)
+endif()
+CMAKE_DEPENDENT_OPTION(BUILD_HANA "Build C++ library powered by boost::hana" ON
+                      "BUILD_LIBRARIES;WITH_HANA" OFF)
+
 # C GLib
 option(WITH_C_GLIB "Build C (GLib) Thrift library" ON)
 if(WITH_C_GLIB)
