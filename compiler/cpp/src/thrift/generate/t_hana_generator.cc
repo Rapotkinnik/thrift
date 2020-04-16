@@ -443,7 +443,7 @@ class {type}Client : public {type}if {{
 // The 'concurrent' client is a thread safe client that correctly handles
 // out of order responses.  It is slower than the regular client, so should
 // only be used when you need to share a connection among multiple threads
-class {type}ConcurrentClient : public {type}If {
+class {type}ConcurrentClient : public {type}If {{
  public:
   using ProtocolPtr = std::shared_ptr<::apache::thrift::protocol::TProtocol>;
 

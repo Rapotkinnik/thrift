@@ -109,6 +109,11 @@ class TJsonSerializer {
 //    return *this;
 //  }
 
+  auto & write(std::ostream & out) {
+    serialize(object_, out);
+    return *this;
+  }
+
  private:
   template <typename T>
   auto & serialize(const T & value, std::ostream & out) {
@@ -174,78 +179,117 @@ class TJsonSerializer {
   }
 
   const T & object_;
-  details::Indent indent_;
-  details::EndLine endline_;
-
-  friend std::ostream & operator << (std::ostream &, const TJsonSerializer &);
+  mutable details::Indent indent_;
+  mutable details::EndLine endline_;
 };  // class TJsonSerializer
 
 template <typename T>
 inline auto & operator << (std::ostream & out, const TJsonSerializer<T> & ser) {
-  return ser.serialize(ser.object_, out);
+  return ser.write(out), out;
 }
 
-//class TJsonDeserializer {
-// public:
-//  auto & serialize(const std::string &str, std::ostream &out) {
-//    return out << '"' << str << '"';
-//  }
 
-//  template <typename T, typename U>
-//  auto & to_json(const std::pair<T, U> &pair, std::ostream &out) {
-//    to_json(std::to_string(pair.first), out  << '{');
-//    return to_json(pair.second, out << ':') << '}';
-//  }
+template <typename T>
+class TJsonDeserializer {
+ public:
+  explicit TJsonDeserializer(T & object)
+    : object_(object) {};
 
-//  template <
-//    typename T,
-//    typename =
-//      typename std::enable_if<
-//        is_iterable<T>::value>::type>
-//  auto & serialize(const T & iterable, std::ostream & out) {
-//    out << '[';
-//    for (const auto & elem : iterable)
-//      to_json(elem, out << ',');
+  auto & read(std::istream & in) {
+    deserialize(object_, in);
+    return *this;
+  }
 
-//    return (std::size(iterable) ? out.seekp(-1, std::io::end) : out) << ']';
-//  }
+  auto & object() {
+    return object_;
+  }
 
-//  template <
-//    typename T,
-//    typename =
-//      typename std::enable_if<
-//        is_hana_object<T>::value>::type>
-//  auto serialize(const T && object, std::ostream & out)
-//  {
-//    out << '{';
-//    size_t count {};
-//    hana::for_each(hana::accessors(object), [&](auto acessor) {
-//      auto [meta, member] = acessor;
-//      auto [name, id] = meta;
+ private:
+  template <typename T>
+  auto & deserialize(T & value, std::istream & in) {
+    return in >> value;
+  }
 
-//      if (member(object)) {
-//        ++cout;
-//        out << name << ':';
-//        to_json(member(object).value(), out) << ',';
-//      }
-//    });
+  auto & deserialize(std::string &str, std::istream &in) {
+    char ch {};
+    std::stringbuf buff{};
+    in.ignore(1, '"').get(ch)
+      .get(buff, '"').get(ch);
+    return str = std::move(buff.str()), in;
+  }
 
-//    return (count ? out.seekp(-1, std::io::end) : out) << '}';
-//  }
+  template <
+    typename T,
+    typename =
+      typename std::enable_if<
+        is_iterable<T>::value>::type>
+  auto & deserialize(T & iterable, std::istream & in) {
+    char ch {};
+    in.ignore(1, '[');
+    while (in.get(ch), ch != ']')
+      iterable.emplace_back();
+      deserialize(iterable.back(), in)
+        .ignore(1, ',')
+        .ignore(1, ' ');
 
-// private:
-//  class JsonContext {
-//  };  // class JsonContext
+    return in;
+  }
 
-//  JsonContext context_;
-//};  // class TJsonDeserializer
+  template <typename T, typename U>
+  auto & deserialize(std::pair<T, U> & pair, std::istream & in) {
+    char ch {};
+    std::string key;
+    in.ignore(1, '{');
+    deserialize(key, in)
+        .ignore(1, ':').get(ch);
+    deserialize(pair.second, in).get(ch);  // should be '}'
 
-//template <typename T>
-//T from_json(const std::string &json) {
-//  T object {};
-//  std::sstream ss{json};
-//  return ss >> TJsonDeserializer{object}, object;
-//};
+    return std::istringstream{key} >> pair.first, in;
+  }
+
+
+  template <
+    typename T,
+    typename =
+      typename std::enable_if<
+        is_hana_object<T>::value>::type>
+  auto deserialize(T & object, std::istream & in)
+  {
+    char ch {};
+    std::string name {};
+
+    in.ignore(1, '{');
+    hana::for_each(hana::accessors<T>(object), [&](auto & accessor) {
+      auto meta = hana::first(accessor);
+      auto member = hana::second(accessor);
+
+      deserialize(name, in)
+        .ignore(1, ':').get(ch);
+      deserialize(member(object), in).get(ch);  // should be ',' or '}'
+    });
+
+    return in;
+  }
+
+ private:
+  class JsonContext {
+  };  // class JsonContext
+
+  T & object_;
+  JsonContext context_;
+};  // class TJsonDeserializer
+
+template <typename T>
+inline auto & operator >> (std::istream & in, const TJsonDeserializer<T> & ser) {
+  return ser.read(in), in;
+}
+
+template <typename T>
+T from_json(const std::string & json) {
+  T object {};
+  std::stringstream ss{json};
+  return ss >> TJsonDeserializer{object}, object;
+};
 
 template <typename T>
 auto to_json(const T & object) {

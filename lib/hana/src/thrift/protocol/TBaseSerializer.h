@@ -17,12 +17,12 @@
  * under the License.
  */
 
-#ifndef _THRIFT_PROTOCOL_TBASESERIALIZER_H_
-#define _THRIFT_PROTOCOL_TBASESERIALIZER_H_ 1
+#pragma once
 
 #include <boost/hana.hpp>
 
 #include <thrift/protocol/TProtocol.h>
+#include <thrift/protocol/TTypeTraits.h>
 #include <thrift/protocol/TProtocolException.h>
 
 namespace apache {
@@ -172,5 +172,3 @@ auto deserialize(T & object, TProtocol & protocol)
   return size;
 }
 }}} // apache::thrift::protocol
-
-#endif // #define _THRIFT_PROTOCOL_TBASESERIALIZER_H_ 1
