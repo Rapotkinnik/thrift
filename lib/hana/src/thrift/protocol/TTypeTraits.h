@@ -128,16 +128,22 @@ auto type2type_v(const T &) {
   return type2type<T>::value;
 };
 
+
+// TODO: change it to hana::tag_of
+template <TType T>
+struct TTypeTag {
+  static constexpr auto type = T;
+};
+
 template <
   typename T,
   typename = std::void_t<>>
 struct is_iterable : std::false_type {};
 
-template <
-  typename T>
-struct is_iterable <T, std::void_t <
-    decltype(std::declval<T>().end()),
-    decltype(std::declval<T>().being())>> : std::true_type {};
+template <typename T>
+struct is_iterable<T, std::void_t<
+  decltype(std::declval<T>().end()),
+  decltype(std::declval<T>().being())>> : std::true_type {};
 
 template <
   typename T,
@@ -145,6 +151,6 @@ template <
 struct is_hana_object : std::false_type {};
 
 template <typename T>
-struct is_hana_object <T, std::void_t<decltype(T::hana_accessors_impl)>> : std::true_type {};
+struct is_hana_object<T, std::void_t<decltype(T::hana_accessors_impl)>> : std::true_type {};
 
 }}}  // namespace apache::thrift::protocol

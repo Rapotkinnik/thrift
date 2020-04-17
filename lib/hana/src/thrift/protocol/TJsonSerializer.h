@@ -84,7 +84,8 @@ struct EndLine {
 };  // struct EndLine
 }  // namespace details
 
-using namespace boost;
+namespace hana = boost::hana;
+using namespace hana::literals;
 using apache::thrift::protocol::TType;
 using apache::thrift::protocol::TProtocol;
 using apache::thrift::protocol::TProtocolException;
@@ -101,6 +102,9 @@ class TJsonSerializer {
 
     return *this;
   }
+
+  // TODO: Add some format configurations
+  //       for instance use std::boolalpha or std::fixed etc.
 
 //  auto & raw() {
 //    indent_.sign_ = '';
@@ -141,7 +145,7 @@ class TJsonSerializer {
 
   template <typename T>
   auto & serialize(const T & iterable, std::ostream & out,
-                  typename std::enable_if<is_iterable<T>::value>::type * = 0) {
+                   typename std::enable_if<is_iterable<T>::value>::type * = 0) {
     out << '[' << endline_;
     {
       details::IndentGuard guard {indent_, out};
@@ -156,7 +160,7 @@ class TJsonSerializer {
 
   template <typename T>
   auto & serialize(const T & object, std::ostream & out,
-                  typename std::enable_if<is_hana_object<T>::value>::type * = 0) {
+                   typename std::enable_if<is_hana_object<T>::value>::type * = 0) {
     out << '{' << endline_;
     {
       size_t count{};
@@ -218,23 +222,6 @@ class TJsonDeserializer {
     return str = std::move(buff.str()), in;
   }
 
-  template <
-    typename T,
-    typename =
-      typename std::enable_if<
-        is_iterable<T>::value>::type>
-  auto & deserialize(T & iterable, std::istream & in) {
-    char ch {};
-    in.ignore(1, '[');
-    while (in.get(ch), ch != ']')
-      iterable.emplace_back();
-      deserialize(iterable.back(), in)
-        .ignore(1, ',')
-        .ignore(1, ' ');
-
-    return in;
-  }
-
   template <typename T, typename U>
   auto & deserialize(std::pair<T, U> & pair, std::istream & in) {
     char ch {};
@@ -247,13 +234,23 @@ class TJsonDeserializer {
     return std::istringstream{key} >> pair.first, in;
   }
 
+  template <typename T>
+  auto & deserialize(T & iterable, std::istream & in,
+                     typename std::enable_if<is_iterable<T>::value>::type * = 0) {
+    char ch {};
+    in.ignore(1, '[');
+    while (in.get(ch), ch != ']')
+      iterable.emplace_back();
+      deserialize(iterable.back(), in)
+        .ignore(1, ',')
+        .ignore(1, ' ');
 
-  template <
-    typename T,
-    typename =
-      typename std::enable_if<
-        is_hana_object<T>::value>::type>
-  auto deserialize(T & object, std::istream & in)
+    return in;
+  }
+
+  template <typename T>
+  auto deserialize(T & object, std::istream & in,
+                   typename std::enable_if<is_hana_object<T>::value>::type * = 0)
   {
     char ch {};
     std::string name {};
@@ -264,15 +261,25 @@ class TJsonDeserializer {
       deserialize(name, in)
           .ignore(1, ':').get(ch);  // should be ':'
 
+      bool skip = true;
       hana::for_each(hana::accessors<T>(object), [&](auto & accessor) {
         auto meta = hana::first(accessor);
         auto member = hana::second(accessor);
 
         if (hana::first(meta) == name) {
+          skip = false;
           deserialize(member(object).emplace(), in);
         }
       });
+
+      if (skip) {
+        // TODO: ignore data...
+        //       in.ignore(1, ',' or '}')
+      }
     }
+
+    // TODO: Check if required fields are filled
+    //       and throw TProtocolException if they are not
 
     return in;
   }
