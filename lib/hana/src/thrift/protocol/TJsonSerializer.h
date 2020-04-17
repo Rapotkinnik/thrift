@@ -259,14 +259,20 @@ class TJsonDeserializer {
     std::string name {};
 
     in.ignore(1, '{');
-    hana::for_each(hana::accessors<T>(object), [&](auto & accessor) {
-      auto meta = hana::first(accessor);
-      auto member = hana::second(accessor);
-
+    while (in.get(ch), ch != '}')
+    {
       deserialize(name, in)
-        .ignore(1, ':').get(ch);
-      deserialize(member(object), in).get(ch);  // should be ',' or '}'
-    });
+          .ignore(1, ':').get(ch);  // should be ':'
+
+      hana::for_each(hana::accessors<T>(object), [&](auto & accessor) {
+        auto meta = hana::first(accessor);
+        auto member = hana::second(accessor);
+
+        if (hana::first(meta) == name) {
+          deserialize(member(object).emplace(), in);
+        }
+      });
+    }
 
     return in;
   }
@@ -286,7 +292,7 @@ inline auto & operator >> (std::istream & in, const TJsonDeserializer<T> & ser) 
 
 template <typename T>
 T from_json(const std::string & json) {
-  T object {};
+  T object{};
   std::stringstream ss{json};
   return ss >> TJsonDeserializer{object}, object;
 };
