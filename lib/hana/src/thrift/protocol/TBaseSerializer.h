@@ -88,30 +88,6 @@ auto deserialize_value = hana::overload_linearly(
 //  return protocol.writeBinary(value);
 //};
 
-template <typename T>
-auto serialize(const std::vector<T> & list, TProtocol & protocol) {
-  auto size = protocol.writeListBegin(type2type<T>::value, std::size(list));
-
-  for (const auto & elem : list) {
-    size += serialize(elem, protocol);
-  }
-
-  return size + protocol.writeListEnd();
-};
-
-template <typename K, typename V>
-auto serialize(const std::map<K, V> & map, TProtocol & protocol) {
-  auto size = protocol.writeMapBegin(
-    type2type<K>::value, type2type<V>::value, std::size(map));
-
-  for (const auto & [key, value] : map) {
-    size += serialize(key, protocol);
-    size += serialize(value, protocol);
-  }
-
-  return size + protocol.writeMapEnd();
-};
-
 
 template <typename T>
 class TProtSerializer {
@@ -139,7 +115,7 @@ private:
 
   template <typename T, typename ElemTag>
   auto serialize(const T & iterable, TProtocol & out, TTypeTag<TType::T_SET>, ElemTag) {
-    auto size = protocol.writeSetBegin(ElemTag::type, std::size(iterable));
+    auto size = out.writeSetBegin(ElemTag::type, std::size(iterable));
     for (const auto & elem : iterable)
       size += serialize(elem, out);
 
@@ -149,7 +125,7 @@ private:
 
   template <typename T, typename ElemTag>
   auto serialize(const T & iterable, TProtocol & out, TTypeTag<TType::T_LIST>, ElemTag) {
-    auto size = protocol.writeListBegin(ElemTag::type, std::size(iterable));
+    auto size = out.writeListBegin(ElemTag::type, std::size(iterable));
     for (const auto & elem : iterable)
       size += serialize(elem, out);
 
@@ -159,7 +135,7 @@ private:
 
   template <typename T, typename KeyTag, typename ValueTag>
   auto serialize(const T & iterable, TProtocol & out, TTypeTag<TType::T_MAP>, KeyTag, ValueTag) {
-    auto size = protocol.writeMapBegin(KeyTag::type, ValueTag::type, std::size(iterable));
+    auto size = out.writeMapBegin(KeyTag::type, ValueTag::type, std::size(iterable));
     for (const auto & [key, value] : iterable) {
       size += serialize(key, out);
       size += serialize(value, out);
@@ -184,8 +160,8 @@ private:
   template <typename T>
   auto & serialize(const T & object, TProtocol & out,
                   typename std::enable_if<is_hana_object<T>::value>::type * = 0) {
-    uint32_t size = protocol.writeStructBegin(object.__name__);
-    hana::for_each(hana::accessors<T>(object), [&](const auto & accessor) {
+    uint32_t size = out.writeStructBegin(object.__name__);
+    hana::for_each(hana::accessors<T>(), [&](const auto & accessor) {
       auto meta = hana::first(accessor);
       auto member = hana::second(accessor);
 
@@ -199,20 +175,15 @@ private:
 //      }
 
       if (member(object).has_value()) {
-        constexpr auto id = meta[1_c];
-        constexpr auto name = meta[0_c];
-        constexpr auto type = hana::front(meta[2_c]);
-        constexpr auto rest = hana::drop_front(meta[2_c])
-
-        size += protocol.writeFieldBegin(name, hana::tag_of_t(type), id);
-        size += serialize(member(object).value(), out, rest);
-        size += protocol.writeFieldEnd();
+        size += out.writeFieldBegin(meta.name, meta.type, meta.id);
+        size += serialize(member(object).value(), out, meta.tags);
+        size += out.writeFieldEnd();
       }
     });
 
     return size
-         + protocol.writeFieldStop()
-         + protocol.writeStructEnd();
+         + out.writeFieldStop()
+         + out.writeStructEnd();
   }
 
   const T & object_;
@@ -224,9 +195,9 @@ inline auto & operator << (TProtocol & out, const TProtSerializer<T> & ser) {
 }
 
 template <typename T>
-class TJsonDeserializer {
+class TProtDeserializer {
 public:
-  explicit TJsonDeserializer(T & object)
+  explicit TProtDeserializer(T & object)
     : object_(object) {};
 
   auto & read(TProtocol & in) {
@@ -246,8 +217,8 @@ private:
 
   template <typename T, typename U>
   auto & deserialize(std::pair<T, U> & pair, TProtocol & in) {
-    return deserialize(pair.first, out)
-         + deserialize(pair.second, out);
+    return deserialize(pair.first, in)
+         + deserialize(pair.second, in);
   }
 
   template <typename T>
@@ -264,26 +235,26 @@ private:
     int16_t fid {};
     std::string name {};
 
-    auto size = protocol.readStructBegin(name);
+    auto size = in.readStructBegin(name);
     if (!name.empty() && name != object.__name__)
       throw std::runtime_error("wrong object name");  // TODO: use TProtocolException
 
     while (true) {
-      size += protocol->readFieldBegin(name, ftype, fid);
+      size += in.readFieldBegin(name, ftype, fid);
       if (ftype == TType::T_STOP) {
         break;
       }
 
       auto skip = true;
       // TODO: use hana::find_if instead of hana::for_each
-      hana::for_each(hana::accessors(object), [&](auto & accessor) {
+      hana::for_each(hana::accessors<T>(), [&](auto & accessor) {
         auto meta = hana::first(accessor);
         auto member = hana::second(accessor);
 
         constexpr auto id = meta[1_c];
         constexpr auto type = meta[2_c][0_c];
 
-        if (fid == id && ftype == hana::tag_of_t(type)) {
+        if (fid == id && ftype == meta.type.value) {
           skip = false;
           size += deserialize(member(object).emplace(), in);
         }
@@ -298,17 +269,17 @@ private:
       });
 
       if (skip) {
-        size += protocol->skip(ftype);
+        size += in.skip(ftype);
       }
 
-      size += protocol->readFieldEnd();
+      size += in.readFieldEnd();
     }
 
     // TODO: Check if all required field are filled
     //       and throw TProtocolException if they are not
 
     return size
-         + iprot->readStructEnd();
+         + in.readStructEnd();
   }
 
 private:

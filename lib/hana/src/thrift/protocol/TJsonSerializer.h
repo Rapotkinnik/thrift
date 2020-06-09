@@ -165,7 +165,7 @@ class TJsonSerializer {
     {
       size_t count{};
       details::IndentGuard guard {indent_, out};
-      hana::for_each(hana::accessors<T>(object), [&](const auto & accessor) {
+      hana::for_each(hana::accessors<T>(), [&](const auto & accessor) {
         auto meta = hana::first(accessor);
         auto member = hana::second(accessor);
 
@@ -262,7 +262,7 @@ class TJsonDeserializer {
           .ignore(1, ':').get(ch);  // should be ':'
 
       bool skip = true;
-      hana::for_each(hana::accessors<T>(object), [&](auto & accessor) {
+      hana::for_each(hana::accessors<T>(), [&](auto & accessor) {
         auto meta = hana::first(accessor);
         auto member = hana::second(accessor);
 
